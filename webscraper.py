@@ -4,19 +4,23 @@ from datetime import datetime, timedelta
 import html
 
 def clean_text(text):
-    # Schneide alles ab dem ersten <sup> weg
+    # Erst alles nach <sup> abschneiden
     text = text.split('<sup')[0]
 
-    # Restliches HTML entfernen
+    # Aus <span class="seperator">oder</span> echtes " oder " machen
+    text = text.replace('<span class="seperator">oder</span>', ' oder ')
+
+    # Danach normalen HTML-Text extrahieren
     text = BeautifulSoup(text, 'html.parser').get_text()
 
-    # + Zeichen entfernen
+    # Pluszeichen entfernen
     text = text.replace('+', '').strip()
 
-    # HTML-Entities auflösen (ä, ö, ü usw.)
+    # HTML Entities auflösen (z.B. &uuml; → ü)
     text = html.unescape(text)
 
     return text
+
 
 def get_mensa_today_filtered(url):
     response = requests.get(url)
