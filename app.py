@@ -74,36 +74,36 @@ def alexa_webhook():
     alexa_request = request.get_json(force=True)
 
     if alexa_request['request']['type'] == 'LaunchRequest':
-        # Wenn Skill nur geöffnet wird (ohne spezielle Frage)
-        speech_text = "Willkommen beim Mensa Planer! Frag mich, was es heute zu essen gibt."
-    
+        speech_text = "<speak>Willkommen beim Mensaplaner!<break time='0.5s'/>Frag mich, was es heute zu essen gibt.</speak>"
+
     elif alexa_request['request']['type'] == 'IntentRequest':
         intent_name = alexa_request['request']['intent']['name']
-        
+
         if intent_name == "GetMensaPlanIntent":
             url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
             essen = get_mensa_today_filtered(url)
 
             if not essen["gerichte"]:
-                speech_text = "Heute gibt es keine Angaben zur Mensa."
+                speech_text = "<speak>Heute gibt es leider keine Angaben zur Mensa.</speak>"
             else:
-                speech_text = "Heute gibt es: "
-                speech_text += ", ".join(essen["gerichte"])
+                speech_text = "<speak>Heute gibt es:<break time='0.5s'/>"
+                speech_text += "<break time='0.5s'/>".join(essen["gerichte"])
                 if essen["beilagen"]:
-                    speech_text += ". Als Beilage: " + ", ".join(essen["beilagen"])
-        
+                    speech_text += ". Als Beilage: <break time='0.5s'/>" + " oder ".join(essen["beilagen"])
+                speech_text += "</speak>"
+
         else:
-            speech_text = "Entschuldigung, das habe ich nicht verstanden."
-    
+            speech_text = "<speak>Entschuldigung, diesen Befehl kenne ich nicht.<break time='0.5s'/>Bitte frag mich nach dem heutigen Essen.</speak>"
+
     else:
-        speech_text = "Entschuldigung, ich verstehe nur Anfragen zur Mensa."
+        speech_text = "<speak>Entschuldigung, ich verstehe nur Anfragen zur Mensa.</speak>"
 
     alexa_response = {
         "version": "1.0",
         "response": {
             "outputSpeech": {
-                "type": "PlainText",
-                "text": speech_text
+                "type": "SSML",
+                "ssml": speech_text
             },
             "shouldEndSession": True
         }
