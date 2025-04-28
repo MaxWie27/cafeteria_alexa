@@ -53,7 +53,7 @@ def get_mensa_today_filtered(url):
                         category_text = category.get_text(strip=True)
 
                         is_relevant = False
-                        if category_text == "Vegetarisch" or category_text == "Klassiker":
+                        if category_text in ["Vegetarisch", "Klassiker"]:
                             is_relevant = True
                         if weekday == "Freitag" and "Tellergericht" in category_text:
                             is_relevant = True
@@ -73,73 +73,57 @@ def get_mensa_today_filtered(url):
 def alexa_webhook():
     alexa_request = request.get_json(force=True)
 
-    if alexa_request['request']['type'] == 'LaunchRequest':
-        speech_text = "<speak>Willkommen beim Mensaplaner!<break time='0.5s'/>Frag mich, was es heute zu essen gibt.</speak>"
+    try:
+        if alexa_request['request']['type'] == 'LaunchRequest':
+            speech_text = "<speak>Willkommen beim Mensaplaner! Frag mich, was es heute zu essen gibt.</speak>"
+            should_end_session = False
 
-        alexa_response = {
-            "version": "1.0",
-            "sessionAttributes": {},  # <-- hinzugefügt!
-            "response": {
-                "outputSpeech": {
-                    "type": "SSML",
-                    "ssml": speech_text
-                },
-                "shouldEndSession": False
-            }
-        }
-        return jsonify(alexa_response)
+        elif alexa_request['request']['type'] == 'IntentRequest':
+            intent_name = alexa_request['request']['intent']['name']
 
-    elif alexa_request['request']['type'] == 'IntentRequest':
-        intent_name = alexa_request['request']['intent']['name']
+            if intent_name == "GetMensaPlanIntent":
+                url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
+                essen = get_mensa_today_filtered(url)
 
-        if intent_name == "GetMensaPlanIntent":
-            url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
-            essen = get_mensa_today_filtered(url)
+                if not essen["gerichte"]:
+                    speech_text = "<speak>Heute gibt es leider keine Angaben zur Mensa.</speak>"
+                else:
+                    speech_text = "<speak>Heute gibt es: "
+                    speech_text += "<break time='0.5s'/>".join(essen["gerichte"])
+                    if essen["beilagen"]:
+                        speech_text += ". Als Beilage: <break time='0.5s'/>" + " oder ".join(essen["beilagen"])
+                    speech_text += "</speak>"
 
-            if not essen["gerichte"]:
-                speech_text = "<speak>Heute gibt es leider keine Angaben zur Mensa.</speak>"
+                should_end_session = True
+
             else:
-                speech_text = "<speak>Heute gibt es:<break time='0.5s'/>"
-                speech_text += "<break time='0.5s'/>".join(essen["gerichte"])
-                if essen["beilagen"]:
-                    speech_text += ". Als Beilage: <break time='0.5s'/>" + " oder ".join(essen["beilagen"])
-                speech_text += "</speak>"
+                speech_text = "<speak>Entschuldigung, diesen Befehl kenne ich nicht.</speak>"
+                should_end_session = True
+
+        elif alexa_request['request']['type'] == 'SessionEndedRequest':
+            return ('', 200)
 
         else:
-            speech_text = "<speak>Entschuldigung, diesen Befehl kenne ich nicht.<break time='0.5s'/>Bitte frag mich nach dem heutigen Essen.</speak>"
+            speech_text = "<speak>Entschuldigung, ich verstehe nur Anfragen zur Mensa.</speak>"
+            should_end_session = True
 
         alexa_response = {
             "version": "1.0",
-            "sessionAttributes": {},  # <-- hinzugefügt!
+            "sessionAttributes": {},
             "response": {
                 "outputSpeech": {
                     "type": "SSML",
                     "ssml": speech_text
                 },
-                "shouldEndSession": True
+                "shouldEndSession": should_end_session
             }
         }
         return jsonify(alexa_response)
 
-    elif alexa_request['request']['type'] == 'SessionEndedRequest':
-        # Wichtig: SessionEndedRequest sauber mit 200 OK beantworten
+    except Exception as e:
+        # Sicherstellen, dass bei Fehlern eine Antwort kommt
+        print(f"Fehler: {e}")
         return ('', 200)
-
-    else:
-        # Wenn Request-Typ unbekannt ist
-        speech_text = "<speak>Entschuldigung, ich verstehe nur Anfragen zur Mensa.</speak>"
-        alexa_response = {
-            "version": "1.0",
-            "sessionAttributes": {},  # <-- hinzugefügt!
-            "response": {
-                "outputSpeech": {
-                    "type": "SSML",
-                    "ssml": speech_text
-                },
-                "shouldEndSession": True
-            }
-        }
-        return jsonify(alexa_response)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
