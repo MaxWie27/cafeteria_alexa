@@ -75,7 +75,11 @@ def alexa_webhook():
 
     try:
         if alexa_request['request']['type'] == 'LaunchRequest':
-            speech_text = "<speak>Willkommen beim Mensaplaner! Frag mich, was es heute zu essen gibt.</speak>"
+            speech_text = "Willkommen beim Mensaplaner! Frag mich, was es heute zu essen gibt."
+            output_speech = {
+                "type": "PlainText",
+                "text": speech_text
+            }
             should_end_session = False
 
         elif alexa_request['request']['type'] == 'IntentRequest':
@@ -94,10 +98,18 @@ def alexa_webhook():
                         speech_text += ". Als Beilage: <break time='0.5s'/>" + " oder ".join(essen["beilagen"])
                     speech_text += "</speak>"
 
+                output_speech = {
+                    "type": "SSML",
+                    "ssml": speech_text
+                }
                 should_end_session = True
 
             else:
                 speech_text = "<speak>Entschuldigung, diesen Befehl kenne ich nicht.</speak>"
+                output_speech = {
+                    "type": "SSML",
+                    "ssml": speech_text
+                }
                 should_end_session = True
 
         elif alexa_request['request']['type'] == 'SessionEndedRequest':
@@ -105,25 +117,26 @@ def alexa_webhook():
 
         else:
             speech_text = "<speak>Entschuldigung, ich verstehe nur Anfragen zur Mensa.</speak>"
+            output_speech = {
+                "type": "SSML",
+                "ssml": speech_text
+            }
             should_end_session = True
 
         alexa_response = {
             "version": "1.0",
             "sessionAttributes": {},
             "response": {
-                "outputSpeech": {
-                    "type": "SSML",
-                    "ssml": speech_text
-                },
+                "outputSpeech": output_speech,
                 "shouldEndSession": should_end_session
             }
         }
         return jsonify(alexa_response)
 
     except Exception as e:
-        # Sicherstellen, dass bei Fehlern eine Antwort kommt
         print(f"Fehler: {e}")
         return ('', 200)
+
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
