@@ -1,34 +1,23 @@
-from flask import Flask, jsonify
+from flask import Flask, request, jsonify
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
+from datetime import datetime
 import html
 import os
 
 app = Flask(__name__)
 
 def clean_text(text):
-    # Erst alles nach <sup> abschneiden
     text = text.split('<sup')[0]
-
-    # Aus <span class="seperator">oder</span> echtes " oder " machen
     text = text.replace('<span class="seperator">oder</span>', ' oder ')
-
-    # Danach normalen HTML-Text extrahieren
     text = BeautifulSoup(text, 'html.parser').get_text()
-
-    # Pluszeichen entfernen
     text = text.replace('+', '').strip()
-
-    # HTML Entities auflösen (z.B. &uuml; → ü)
     text = html.unescape(text)
-
     return text
 
 def get_mensa_today_filtered(url):
     response = requests.get(url)
     response.raise_for_status()
-
     soup = BeautifulSoup(response.content, 'html.parser', from_encoding='utf-8')
 
     date = datetime.now()
@@ -80,18 +69,34 @@ def get_mensa_today_filtered(url):
 
     return results
 
-@app.route('/mensa', methods=['GET'])
-def mensa():
-    url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
-    essen = get_mensa_today_filtered(url)
+@app.route('/mensa', methods=['POST'])
+def alexa_webhook():
+    alexa_request = request.get_json(force=True)
 
-    if not essen["gerichte"]:
-        speech_text = "Heute gibt es keine Angaben zur Mensa."
+    if alexa_request['request']['type'] == 'LaunchRequest':
+        # Wenn Skill nur geöffnet wird (ohne spezielle Frage)
+        speech_text = "Willkommen beim Mensa Planer! Frag mich, was es heute zu essen gibt."
+    
+    elif alexa_request['request']['type'] == 'IntentRequest':
+        intent_name = alexa_request['request']['intent']['name']
+        
+        if intent_name == "GetMensaPlanIntent":
+            url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
+            essen = get_mensa_today_filtered(url)
+
+            if not essen["gerichte"]:
+                speech_text = "Heute gibt es keine Angaben zur Mensa."
+            else:
+                speech_text = "Heute gibt es: "
+                speech_text += ", ".join(essen["gerichte"])
+                if essen["beilagen"]:
+                    speech_text += ". Als Beilage: " + ", ".join(essen["beilagen"])
+        
+        else:
+            speech_text = "Entschuldigung, das habe ich nicht verstanden."
+    
     else:
-        speech_text = "Heute gibt es: "
-        speech_text += ", ".join(essen["gerichte"])
-        if essen["beilagen"]:
-            speech_text += ". Als Beilage: " + ", ".join(essen["beilagen"])
+        speech_text = "Entschuldigung, ich verstehe nur Anfragen zur Mensa."
 
     alexa_response = {
         "version": "1.0",
