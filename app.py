@@ -76,6 +76,19 @@ def alexa_webhook():
     if alexa_request['request']['type'] == 'LaunchRequest':
         speech_text = "<speak>Willkommen beim Mensaplaner!<break time='0.5s'/>Frag mich, was es heute zu essen gibt.</speak>"
 
+        alexa_response = {
+            "version": "1.0",
+            "sessionAttributes": {},  # <-- hinzugefügt!
+            "response": {
+                "outputSpeech": {
+                    "type": "SSML",
+                    "ssml": speech_text
+                },
+                "shouldEndSession": False
+            }
+        }
+        return jsonify(alexa_response)
+
     elif alexa_request['request']['type'] == 'IntentRequest':
         intent_name = alexa_request['request']['intent']['name']
 
@@ -95,22 +108,38 @@ def alexa_webhook():
         else:
             speech_text = "<speak>Entschuldigung, diesen Befehl kenne ich nicht.<break time='0.5s'/>Bitte frag mich nach dem heutigen Essen.</speak>"
 
-    else:
-        speech_text = "<speak>Entschuldigung, ich verstehe nur Anfragen zur Mensa.</speak>"
-
-    alexa_response = {
-        "version": "1.0",
-        "sessionAttributes": {},
-        "response": {
-            "outputSpeech": {
-                "type": "SSML",
-                "ssml": speech_text
-            },
-            "shouldEndSession": False
+        alexa_response = {
+            "version": "1.0",
+            "sessionAttributes": {},  # <-- hinzugefügt!
+            "response": {
+                "outputSpeech": {
+                    "type": "SSML",
+                    "ssml": speech_text
+                },
+                "shouldEndSession": True
+            }
         }
-    }
+        return jsonify(alexa_response)
 
-    return jsonify(alexa_response)
+    elif alexa_request['request']['type'] == 'SessionEndedRequest':
+        # Wichtig: SessionEndedRequest sauber mit 200 OK beantworten
+        return ('', 200)
+
+    else:
+        # Wenn Request-Typ unbekannt ist
+        speech_text = "<speak>Entschuldigung, ich verstehe nur Anfragen zur Mensa.</speak>"
+        alexa_response = {
+            "version": "1.0",
+            "sessionAttributes": {},  # <-- hinzugefügt!
+            "response": {
+                "outputSpeech": {
+                    "type": "SSML",
+                    "ssml": speech_text
+                },
+                "shouldEndSession": True
+            }
+        }
+        return jsonify(alexa_response)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
