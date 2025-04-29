@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 import html
 import os
 
@@ -15,12 +15,12 @@ def clean_text(text):
     text = html.unescape(text)
     return text
 
-def get_mensa_today_filtered(url):
+def get_mensa_filtered(url, day_offset=0):
     response = requests.get(url)
     response.raise_for_status()
     soup = BeautifulSoup(response.content, 'html.parser', from_encoding='utf-8')
 
-    date = datetime.now()
+    date = datetime.now() + timedelta(days=day_offset)
     weekday_german = date.strftime('%A')
     weekday_map = {
         'Monday': 'Montag',
@@ -53,7 +53,7 @@ def get_mensa_today_filtered(url):
                         category_text = category.get_text(strip=True)
 
                         is_relevant = False
-                        if category_text in ["Vegetarisch", "Klassiker"]:
+                        if category_text == "Vegetarisch" or category_text == "Klassiker":
                             is_relevant = True
                         if weekday == "Freitag" and "Tellergericht" in category_text:
                             is_relevant = True
@@ -73,91 +73,48 @@ def get_mensa_today_filtered(url):
 def alexa_webhook():
     alexa_request = request.get_json(force=True)
 
-    try:
-        request_type = alexa_request['request']['type']
+    if alexa_request['request']['type'] == 'LaunchRequest':
+        speech_text = "Willkommen beim Mensaplaner! Du kannst mich fragen, was es heute oder morgen zu essen gibt."
 
-        if request_type == 'LaunchRequest':
-            return jsonify({
-                "version": "1.0",
-                "sessionAttributes": {},
-                "response": {
-                    "outputSpeech": {
-                        "type": "PlainText",
-                        "text": "Willkommen beim Mensaplaner! Du kannst mich fragen, was es heute zu essen gibt."
-                    },
-                    "shouldEndSession": False
-                }
-            })
+    elif alexa_request['request']['type'] == 'IntentRequest':
+        intent_name = alexa_request['request']['intent']['name']
+        url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
 
-        elif request_type == 'IntentRequest':
-            intent_name = alexa_request['request']['intent']['name']
-
-            if intent_name == "GetMensaPlanIntent":
-                url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
-                essen = get_mensa_today_filtered(url)
-
-                if not essen["gerichte"]:
-                    speech_text = "Heute gibt es leider keine Angaben zur Mensa."
-                else:
-                    speech_text = "Heute gibt es: " + ", ".join(essen["gerichte"])
-                    if essen["beilagen"]:
-                        speech_text += ". Als Beilage: " + " oder ".join(essen["beilagen"])
-
-                return jsonify({
-                    "version": "1.0",
-                    "sessionAttributes": {},
-                    "response": {
-                        "outputSpeech": {
-                            "type": "PlainText",
-                            "text": speech_text
-                        },
-                        "shouldEndSession": True
-                    }
-                })
-
-            else:
-                return jsonify({
-                    "version": "1.0",
-                    "sessionAttributes": {},
-                    "response": {
-                        "outputSpeech": {
-                            "type": "PlainText",
-                            "text": "Diesen Befehl kenne ich nicht."
-                        },
-                        "shouldEndSession": True
-                    }
-                })
-
-        elif request_type == 'SessionEndedRequest':
-            return ('', 200)
-
+        if intent_name == "GetMensaPlanIntent":
+            essen = get_mensa_filtered(url, day_offset=0)
+            prefix = "Heute gibt es:"
+        elif intent_name == "GetMensaPlanTomorrowIntent":
+            essen = get_mensa_filtered(url, day_offset=1)
+            prefix = "Morgen gibt es:"
         else:
-            return jsonify({
-                "version": "1.0",
-                "sessionAttributes": {},
-                "response": {
-                    "outputSpeech": {
-                        "type": "PlainText",
-                        "text": "Entschuldigung, ich verstehe nur Anfragen zur Mensa."
-                    },
-                    "shouldEndSession": True
-                }
-            })
+            speech_text = "Entschuldigung, diesen Befehl kenne ich nicht. Bitte frag mich nach dem heutigen oder morgigen Essen."
+            return jsonify(build_response(speech_text))
 
-    except Exception as e:
-        print("Fehler:", str(e))
-        return jsonify({
-            "version": "1.0",
-            "response": {
-                "outputSpeech": {
-                    "type": "PlainText",
-                    "text": "Ein Fehler ist aufgetreten. Bitte versuche es später noch einmal."
-                },
-                "shouldEndSession": True
-            }
-        })
+        if not essen["gerichte"]:
+            speech_text = f"{prefix} Leider keine Angaben zur Mensa."
+        else:
+            speech_text = f"{prefix} "
+            speech_text += ", ".join(essen["gerichte"])
+            if essen["beilagen"]:
+                speech_text += ". Als Beilage: " + ", ".join(essen["beilagen"])
 
+    else:
+        speech_text = "Entschuldigung, ich verstehe nur Anfragen zur Mensa."
 
+    return jsonify(build_response(speech_text))
+
+def build_response(text):
+    return {
+        "version": "1.0",
+        "sessionAttributes": {},
+        "response": {
+            "outputSpeech": {
+                "type": "PlainText",
+                "text": text
+            },
+            "shouldEndSession": True
+        }
+    }
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
