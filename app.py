@@ -138,6 +138,54 @@ def alexa_webhook():
                     }
                 })
 
+            elif intent_name == "GetMensaPlanByDayIntent":
+                weekday_slot = alexa_request['request']['intent']['slots'].get('weekday', {}).get('value')
+
+                weekday_offset = {
+                    'montag': 0,
+                    'dienstag': 1,
+                    'mittwoch': 2,
+                    'donnerstag': 3,
+                    'freitag': 4,
+                    'samstag': 5,
+                    'sonntag': 6
+                }
+
+                today = datetime.now()
+                target_offset = None
+                for i in range(7):
+                    day_name = (today + timedelta(days=i)).strftime('%A').lower()
+                    german_day = list(weekday_offset.keys())[i]
+                    if german_day in weekday_slot.lower():
+                        target_offset = i
+                        break
+
+                if target_offset is None:
+                    speech_text = "Diesen Tag konnte ich leider nicht erkennen."
+                else:
+                    url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
+                    essen = get_mensa_today_filtered(url, day_offset=target_offset)
+
+                    if not essen["gerichte"]:
+                        speech_text = f"Am {weekday_slot} gibt es leider keine Angaben zur Mensa."
+                    else:
+                        speech_text = f"Am {weekday_slot} gibt es: " + ", ".join(essen["gerichte"])
+                        if essen["beilagen"]:
+                            speech_text += ". Als Beilage: " + " oder ".join(essen["beilagen"])
+
+                return jsonify({
+                    "version": "1.0",
+                    "sessionAttributes": {},
+                    "response": {
+                        "outputSpeech": {
+                            "type": "PlainText",
+                            "text": speech_text
+                        },
+                        "shouldEndSession": True
+                    }
+                })
+
+            
             else:
                 return jsonify({
                     "version": "1.0",
