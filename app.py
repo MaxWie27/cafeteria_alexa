@@ -115,6 +115,7 @@ def alexa_webhook():
 
     alexa_response = {
         "version": "1.0",
+        "sessionAttributes": {},
         "response": {
             "outputSpeech": {
                 "type": "SSML",
