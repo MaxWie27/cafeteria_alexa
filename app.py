@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime,timedelta
+from datetime import datetime, timedelta
 import html
 import os
 
@@ -15,13 +15,26 @@ def clean_text(text):
     text = html.unescape(text)
     return text
 
-def get_mensa_today_filtered(url, day_offset=0):
+def get_available_days(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.content, 'html.parser', from_encoding='utf-8')
+    available_days = []
+    for headline in soup.find_all('h3', class_=['default-headline', 'active-headline']):
+        text = headline.get_text(strip=True)
+        try:
+            date_part = text.split(',')[1].strip()
+            available_days.append(date_part)
+        except IndexError:
+            continue
+    return available_days
+
+def get_mensa_filtered(url, date):
     response = requests.get(url)
     response.raise_for_status()
     soup = BeautifulSoup(response.content, 'html.parser', from_encoding='utf-8')
 
-    date = datetime.now() + timedelta(days=day_offset)
-    weekday_german = date.strftime('%A')
+    weekday = date.strftime('%A')
     weekday_map = {
         'Monday': 'Montag',
         'Tuesday': 'Dienstag',
@@ -31,7 +44,7 @@ def get_mensa_today_filtered(url, day_offset=0):
         'Saturday': 'Samstag',
         'Sunday': 'Sonntag'
     }
-    weekday = weekday_map.get(weekday_german)
+    german_weekday = weekday_map.get(weekday)
     date_str = date.strftime('%d.%m.%Y')
 
     menu_divs = soup.find_all('div', class_='preventBreak')
@@ -42,7 +55,7 @@ def get_mensa_today_filtered(url, day_offset=0):
         if headline:
             headline_text = headline.get_text(separator=" ", strip=True)
 
-            if weekday in headline_text and date_str in headline_text:
+            if german_weekday in headline_text and date_str in headline_text:
                 menu_items = div.select('table.menues tr')
                 for item in menu_items:
                     category = item.find('span', class_='menue-category')
@@ -51,13 +64,7 @@ def get_mensa_today_filtered(url, day_offset=0):
 
                     if category and description:
                         category_text = category.get_text(strip=True)
-
-                        is_relevant = False
-                        if category_text in ["Vegetarisch", "Klassiker"]:
-                            is_relevant = True
-                        if weekday == "Freitag" and "Tellergericht" in category_text:
-                            is_relevant = True
-
+                        is_relevant = category_text in ["Vegetarisch", "Klassiker"] or (german_weekday == "Freitag" and "Tellergericht" in category_text)
                         if is_relevant:
                             desc_clean = clean_text(str(description))
                             results["gerichte"].append(f"{category_text}: {desc_clean}")
@@ -66,15 +73,14 @@ def get_mensa_today_filtered(url, day_offset=0):
                 for extra in extras:
                     extra_text = clean_text(str(extra))
                     results["beilagen"].append(extra_text)
-
     return results
 
 @app.route('/mensa', methods=['POST'])
 def alexa_webhook():
     alexa_request = request.get_json(force=True)
-
     try:
         request_type = alexa_request['request']['type']
+        url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
 
         if request_type == 'LaunchRequest':
             return jsonify({
@@ -83,7 +89,7 @@ def alexa_webhook():
                 "response": {
                     "outputSpeech": {
                         "type": "PlainText",
-                        "text": "Willkommen beim Mensaplaner! Du kannst mich fragen, was es heute zu essen gibt."
+                        "text": "Willkommen beim Mensaplaner! Du kannst mich fragen, was es heute oder an einem bestimmten Tag zu essen gibt."
                     },
                     "shouldEndSession": False
                 }
@@ -91,144 +97,83 @@ def alexa_webhook():
 
         elif request_type == 'IntentRequest':
             intent_name = alexa_request['request']['intent']['name']
+            today = datetime.now()
+            available_dates = get_available_days(url)
 
             if intent_name == "GetMensaPlanIntent":
-                url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
-                essen = get_mensa_today_filtered(url)
+                target_date = today
 
-                if not essen["gerichte"]:
-                    speech_text = "Heute gibt es leider keine Angaben zur Mensa."
-                else:
-                    speech_text = "Heute gibt es: " + ", ".join(essen["gerichte"])
-                    if essen["beilagen"]:
-                        speech_text += ". Als Beilage: " + " oder ".join(essen["beilagen"])
-
-                return jsonify({
-                    "version": "1.0",
-                    "sessionAttributes": {},
-                    "response": {
-                        "outputSpeech": {
-                            "type": "PlainText",
-                            "text": speech_text
-                        },
-                        "shouldEndSession": True
-                    }
-                })
-                
             elif intent_name == "GetMensaPlanTomorrowIntent":
-                url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
-                essen = get_mensa_today_filtered(url,day_offset=1)
-
-                if not essen["gerichte"]:
-                    speech_text = "Morgen gibt es leider keine Angaben zur Mensa."
-                else:
-                    speech_text = "Morgen gibt es: " + ", ".join(essen["gerichte"])
-                    if essen["beilagen"]:
-                        speech_text += ". Als Beilage: " + " oder ".join(essen["beilagen"])
-
-                return jsonify({
-                    "version": "1.0",
-                    "sessionAttributes": {},
-                    "response": {
-                        "outputSpeech": {
-                            "type": "PlainText",
-                            "text": speech_text
-                        },
-                        "shouldEndSession": True
-                    }
-                })
+                target_date = today + timedelta(days=1)
 
             elif intent_name == "GetMensaPlanByDayIntent":
                 weekday_slot = alexa_request['request']['intent']['slots'].get('weekday', {}).get('value')
+                if not weekday_slot:
+                    return fallback_response("Ich konnte den gewünschten Tag nicht erkennen.")
 
-                weekday_offset = {
-                    'montag': 0,
-                    'dienstag': 1,
-                    'mittwoch': 2,
-                    'donnerstag': 3,
-                    'freitag': 4,
-                    'samstag': 5,
-                    'sonntag': 6
-                }
+                weekdays_de = ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag", "sonntag"]
+                weekday_slot = weekday_slot.lower()
+                try:
+                    target_index = weekdays_de.index(weekday_slot)
+                except ValueError:
+                    return fallback_response("Diesen Tag kenne ich nicht.")
 
-                today = datetime.now()
-                target_offset = None
-                for i in range(7):
-                    day_name = (today + timedelta(days=i)).strftime('%A').lower()
-                    german_day = list(weekday_offset.keys())[i]
-                    if german_day in weekday_slot.lower():
-                        target_offset = i
+                for i in range(1, 14):  # suche bis zu 2 Wochen im Voraus
+                    candidate = today + timedelta(days=i)
+                    if candidate.weekday() == target_index:
+                        target_date = candidate
                         break
-
-                if target_offset is None:
-                    speech_text = "Diesen Tag konnte ich leider nicht erkennen."
                 else:
-                    url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
-                    essen = get_mensa_today_filtered(url, day_offset=target_offset)
-
-                    if not essen["gerichte"]:
-                        speech_text = f"Am {weekday_slot} gibt es leider keine Angaben zur Mensa."
-                    else:
-                        speech_text = f"Am {weekday_slot} gibt es: " + ", ".join(essen["gerichte"])
-                        if essen["beilagen"]:
-                            speech_text += ". Als Beilage: " + " oder ".join(essen["beilagen"])
-
-                return jsonify({
-                    "version": "1.0",
-                    "sessionAttributes": {},
-                    "response": {
-                        "outputSpeech": {
-                            "type": "PlainText",
-                            "text": speech_text
-                        },
-                        "shouldEndSession": True
-                    }
-                })
-
-            
+                    return fallback_response(f"Ich konnte kein Datum für {weekday_slot} finden.")
             else:
-                return jsonify({
-                    "version": "1.0",
-                    "sessionAttributes": {},
-                    "response": {
-                        "outputSpeech": {
-                            "type": "PlainText",
-                            "text": "Diesen Befehl kenne ich nicht."
-                        },
-                        "shouldEndSession": True
-                    }
-                })
+                return fallback_response("Diesen Befehl kenne ich nicht.")
 
-        elif request_type == 'SessionEndedRequest':
-            return ('', 200)
+            target_date_str = target_date.strftime('%d.%m.%Y')
+            if target_date_str not in available_dates:
+                speech_text = f"Am {target_date.strftime('%A')} gibt es leider keine Angaben zur Mensa."
+            else:
+                essen = get_mensa_filtered(url, target_date)
+                if not essen["gerichte"]:
+                    speech_text = f"Am {target_date.strftime('%A')} gibt es leider keine Angaben zur Mensa."
+                else:
+                    speech_text = f"Am {target_date.strftime('%A')} gibt es: " + ", ".join(essen["gerichte"])
+                    if essen["beilagen"]:
+                        speech_text += ". Als Beilage: " + " oder ".join(essen["beilagen"])
 
-        else:
             return jsonify({
                 "version": "1.0",
                 "sessionAttributes": {},
                 "response": {
                     "outputSpeech": {
                         "type": "PlainText",
-                        "text": "Entschuldigung, ich verstehe nur Anfragen zur Mensa."
+                        "text": speech_text
                     },
                     "shouldEndSession": True
                 }
             })
 
+        elif request_type == 'SessionEndedRequest':
+            return ('', 200)
+
+        else:
+            return fallback_response("Entschuldigung, ich verstehe nur Anfragen zur Mensa.")
+
     except Exception as e:
         print("Fehler:", str(e))
-        return jsonify({
-            "version": "1.0",
-            "response": {
-                "outputSpeech": {
-                    "type": "PlainText",
-                    "text": "Ein Fehler ist aufgetreten. Bitte versuche es später noch einmal."
-                },
-                "shouldEndSession": True
-            }
-        })
+        return fallback_response("Ein Fehler ist aufgetreten. Bitte versuche es später noch einmal.")
 
-
+def fallback_response(message):
+    return jsonify({
+        "version": "1.0",
+        "sessionAttributes": {},
+        "response": {
+            "outputSpeech": {
+                "type": "PlainText",
+                "text": message
+            },
+            "shouldEndSession": True
+        }
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
