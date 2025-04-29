@@ -8,12 +8,13 @@ import os
 app = Flask(__name__)
 
 def clean_text(text):
-    text = text.split('<sup')[0]
-    text = text.replace('<span class="seperator">oder</span>', ' oder ')
-    text = BeautifulSoup(text, 'html.parser').get_text()
-    text = text.replace('+', '').strip()
-    text = html.unescape(text)
-    return text
+    soup = BeautifulSoup(text, 'html.parser')
+    for sup in soup.find_all('sup'):
+        sup.decompose()
+    for sep in soup.find_all('span', class_='seperator'):
+        sep.replace_with(' oder ')
+    clean = soup.get_text().replace('+', '').strip()
+    return html.unescape(clean)
 
 def get_available_days(url):
     response = requests.get(url)
@@ -112,13 +113,22 @@ def alexa_webhook():
                     return fallback_response("Ich konnte den gewünschten Tag nicht erkennen.")
 
                 weekdays_de = ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag", "sonntag"]
+                weekday_map_reverse = {
+                    'monday': 'Montag',
+                    'tuesday': 'Dienstag',
+                    'wednesday': 'Mittwoch',
+                    'thursday': 'Donnerstag',
+                    'friday': 'Freitag',
+                    'saturday': 'Samstag',
+                    'sunday': 'Sonntag'
+                }
                 weekday_slot = weekday_slot.lower()
                 try:
                     target_index = weekdays_de.index(weekday_slot)
                 except ValueError:
                     return fallback_response("Diesen Tag kenne ich nicht.")
 
-                for i in range(1, 14):  # suche bis zu 2 Wochen im Voraus
+                for i in range(1, 14):
                     candidate = today + timedelta(days=i)
                     if candidate.weekday() == target_index:
                         target_date = candidate
@@ -129,14 +139,17 @@ def alexa_webhook():
                 return fallback_response("Diesen Befehl kenne ich nicht.")
 
             target_date_str = target_date.strftime('%d.%m.%Y')
+            german_day = target_date.strftime('%A')
+            german_day_label = weekday_map_reverse.get(german_day.lower(), german_day)
+
             if target_date_str not in available_dates:
-                speech_text = f"Am {target_date.strftime('%A')} gibt es leider keine Angaben zur Mensa."
+                speech_text = f"Am {german_day_label} gibt es leider keine Angaben zur Mensa."
             else:
                 essen = get_mensa_filtered(url, target_date)
                 if not essen["gerichte"]:
-                    speech_text = f"Am {target_date.strftime('%A')} gibt es leider keine Angaben zur Mensa."
+                    speech_text = f"Am {german_day_label} gibt es leider keine Angaben zur Mensa."
                 else:
-                    speech_text = f"Am {target_date.strftime('%A')} gibt es: " + ", ".join(essen["gerichte"])
+                    speech_text = f"Am {german_day_label} gibt es: " + ", ".join(essen["gerichte"])
                     if essen["beilagen"]:
                         speech_text += ". Als Beilage: " + " oder ".join(essen["beilagen"])
 
