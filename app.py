@@ -15,7 +15,7 @@ def clean_text(text):
     text = html.unescape(text)
     return text
 
-def get_mensa_filtered(url, day_offset=0):
+def get_mensa_today_filtered(url, day_offset=0):
     response = requests.get(url)
     response.raise_for_status()
     soup = BeautifulSoup(response.content, 'html.parser', from_encoding='utf-8')
@@ -74,34 +74,58 @@ def alexa_webhook():
     alexa_request = request.get_json(force=True)
 
     if alexa_request['request']['type'] == 'LaunchRequest':
-        speech_text = "Willkommen beim Mensaplaner! Du kannst mich fragen, was es heute oder morgen zu essen gibt."
+        speech_text = "<speak>Willkommen beim Mensaplaner! Du kannst mich fragen, was es heute oder morgen zu essen gibt.</speak>"
 
     elif alexa_request['request']['type'] == 'IntentRequest':
         intent_name = alexa_request['request']['intent']['name']
-        url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
 
         if intent_name == "GetMensaPlanIntent":
-            essen = get_mensa_filtered(url, day_offset=0)
-            prefix = "Heute gibt es:"
-        elif intent_name == "GetMensaPlanTomorrowIntent":
-            essen = get_mensa_filtered(url, day_offset=1)
-            prefix = "Morgen gibt es:"
-        else:
-            speech_text = "Entschuldigung, diesen Befehl kenne ich nicht. Bitte frag mich nach dem heutigen oder morgigen Essen."
-            return jsonify(build_response(speech_text))
+            # HEUTE
+            url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
+            essen = get_mensa_today_filtered(url, day_offset=0)
 
-        if not essen["gerichte"]:
-            speech_text = f"{prefix} Leider keine Angaben zur Mensa."
+            if not essen["gerichte"]:
+                speech_text = "<speak>Heute gibt es leider keine Angaben zur Mensa.</speak>"
+            else:
+                speech_text = "<speak>Heute gibt es:<break time='0.5s'/>"
+                speech_text += "<break time='0.5s'/>".join(essen["gerichte"])
+                if essen["beilagen"]:
+                    speech_text += ". Als Beilage: <break time='0.5s'/>" + " oder ".join(essen["beilagen"])
+                speech_text += "</speak>"
+
+        elif intent_name == "GetMensaPlanTomorrowIntent":
+            # MORGEN
+            url = "https://www.studierendenwerk-aachen.de/speiseplaene/eupenerstrasse-w.html"
+            essen = get_mensa_today_filtered(url, day_offset=1)
+
+            if not essen["gerichte"]:
+                speech_text = "<speak>Morgen gibt es leider keine Angaben zur Mensa.</speak>"
+            else:
+                speech_text = "<speak>Morgen gibt es:<break time='0.5s'/>"
+                speech_text += "<break time='0.5s'/>".join(essen["gerichte"])
+                if essen["beilagen"]:
+                    speech_text += ". Als Beilage: <break time='0.5s'/>" + " oder ".join(essen["beilagen"])
+                speech_text += "</speak>"
+
         else:
-            speech_text = f"{prefix} "
-            speech_text += ", ".join(essen["gerichte"])
-            if essen["beilagen"]:
-                speech_text += ". Als Beilage: " + ", ".join(essen["beilagen"])
+            speech_text = "<speak>Entschuldigung, diesen Befehl kenne ich nicht.<break time='0.5s'/>Bitte frag mich nach dem heutigen oder morgigen Essen.</speak>"
 
     else:
-        speech_text = "Entschuldigung, ich verstehe nur Anfragen zur Mensa."
+        speech_text = "<speak>Entschuldigung, ich verstehe nur Anfragen zur Mensa.</speak>"
 
-    return jsonify(build_response(speech_text))
+    alexa_response = {
+        "version": "1.0",
+        "response": {
+            "outputSpeech": {
+                "type": "SSML",
+                "ssml": speech_text
+            },
+            "shouldEndSession": True
+        }
+    }
+
+    return jsonify(alexa_response)
+
 
 def build_response(text):
     return {
