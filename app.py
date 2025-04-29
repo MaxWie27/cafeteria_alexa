@@ -140,16 +140,24 @@ def alexa_webhook():
 
             target_date_str = target_date.strftime('%d.%m.%Y')
             german_day = target_date.strftime('%A')
-            german_day_label = weekday_map_reverse.get(german_day.lower(), german_day)
+            is_today = target_date.date() == today.date()
+            is_tomorrow = target_date.date() == (today + timedelta(days=1)).date()
+
+            if is_today:
+                day_label = "Heute"
+            elif is_tomorrow:
+                day_label = "Morgen"
+            else:
+                day_label = weekday_map_reverse.get(german_day.lower(), german_day)
 
             if target_date_str not in available_dates:
-                speech_text = f"Am {german_day_label} gibt es leider keine Angaben zur Mensa."
+                speech_text = f"{day_label} gibt es leider keine Angaben zur Mensa."
             else:
                 essen = get_mensa_filtered(url, target_date)
                 if not essen["gerichte"]:
-                    speech_text = f"Am {german_day_label} gibt es leider keine Angaben zur Mensa."
+                    speech_text = f"{day_label} gibt es leider keine Angaben zur Mensa."
                 else:
-                    speech_text = f"Am {german_day_label} gibt es: " + ", ".join(essen["gerichte"])
+                    speech_text = f"{day_label} gibt es: " + ", ".join(essen["gerichte"])
                     if essen["beilagen"]:
                         speech_text += ". Als Beilage: " + " oder ".join(essen["beilagen"])
 
