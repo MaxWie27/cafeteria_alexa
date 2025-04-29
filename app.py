@@ -74,15 +74,22 @@ def alexa_webhook():
     alexa_request = request.get_json(force=True)
 
     try:
-        if alexa_request['request']['type'] == 'LaunchRequest':
-            speech_text = "Willkommen beim Mensaplaner! Frag mich, was es heute zu essen gibt."
-            output_speech = {
-                "type": "PlainText",
-                "text": speech_text
-            }
-            should_end_session = False
+        request_type = alexa_request['request']['type']
 
-        elif alexa_request['request']['type'] == 'IntentRequest':
+        if request_type == 'LaunchRequest':
+            return jsonify({
+                "version": "1.0",
+                "sessionAttributes": {},
+                "response": {
+                    "outputSpeech": {
+                        "type": "PlainText",
+                        "text": "Willkommen beim Mensaplaner! Du kannst mich fragen, was es heute zu essen gibt."
+                    },
+                    "shouldEndSession": False
+                }
+            })
+
+        elif request_type == 'IntentRequest':
             intent_name = alexa_request['request']['intent']['name']
 
             if intent_name == "GetMensaPlanIntent":
@@ -90,52 +97,66 @@ def alexa_webhook():
                 essen = get_mensa_today_filtered(url)
 
                 if not essen["gerichte"]:
-                    speech_text = "<speak>Heute gibt es leider keine Angaben zur Mensa.</speak>"
+                    speech_text = "Heute gibt es leider keine Angaben zur Mensa."
                 else:
-                    speech_text = "<speak>Heute gibt es: "
-                    speech_text += "<break time='0.5s'/>".join(essen["gerichte"])
+                    speech_text = "Heute gibt es: " + ", ".join(essen["gerichte"])
                     if essen["beilagen"]:
-                        speech_text += ". Als Beilage: <break time='0.5s'/>" + " oder ".join(essen["beilagen"])
-                    speech_text += "</speak>"
+                        speech_text += ". Als Beilage: " + " oder ".join(essen["beilagen"])
 
-                output_speech = {
-                    "type": "SSML",
-                    "ssml": speech_text
-                }
-                should_end_session = True
+                return jsonify({
+                    "version": "1.0",
+                    "sessionAttributes": {},
+                    "response": {
+                        "outputSpeech": {
+                            "type": "PlainText",
+                            "text": speech_text
+                        },
+                        "shouldEndSession": True
+                    }
+                })
 
             else:
-                speech_text = "<speak>Entschuldigung, diesen Befehl kenne ich nicht.</speak>"
-                output_speech = {
-                    "type": "SSML",
-                    "ssml": speech_text
-                }
-                should_end_session = True
+                return jsonify({
+                    "version": "1.0",
+                    "sessionAttributes": {},
+                    "response": {
+                        "outputSpeech": {
+                            "type": "PlainText",
+                            "text": "Diesen Befehl kenne ich nicht."
+                        },
+                        "shouldEndSession": True
+                    }
+                })
 
-        elif alexa_request['request']['type'] == 'SessionEndedRequest':
+        elif request_type == 'SessionEndedRequest':
             return ('', 200)
 
         else:
-            speech_text = "<speak>Entschuldigung, ich verstehe nur Anfragen zur Mensa.</speak>"
-            output_speech = {
-                "type": "SSML",
-                "ssml": speech_text
-            }
-            should_end_session = True
-
-        alexa_response = {
-            "version": "1.0",
-            "sessionAttributes": {},
-            "response": {
-                "outputSpeech": output_speech,
-                "shouldEndSession": should_end_session
-            }
-        }
-        return jsonify(alexa_response)
+            return jsonify({
+                "version": "1.0",
+                "sessionAttributes": {},
+                "response": {
+                    "outputSpeech": {
+                        "type": "PlainText",
+                        "text": "Entschuldigung, ich verstehe nur Anfragen zur Mensa."
+                    },
+                    "shouldEndSession": True
+                }
+            })
 
     except Exception as e:
-        print(f"Fehler: {e}")
-        return ('', 200)
+        print("Fehler:", str(e))
+        return jsonify({
+            "version": "1.0",
+            "response": {
+                "outputSpeech": {
+                    "type": "PlainText",
+                    "text": "Ein Fehler ist aufgetreten. Bitte versuche es später noch einmal."
+                },
+                "shouldEndSession": True
+            }
+        })
+
 
 
 if __name__ == '__main__':
